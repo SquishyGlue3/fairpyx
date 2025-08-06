@@ -162,4 +162,4 @@ if __name__ == "__main__":
         agent_capacity = agent_capacities.__getitem__,
         agent_item_value = lambda agent,item: - valuations[agent][item],  # Negative value = cost
         allow_negative_value_assignments=True)  # solve a min-cost problem
-    print(f'Faipyx result:\n{res}')
+    print(f'Fairpyx result:\n{res}')
