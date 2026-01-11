@@ -58,28 +58,21 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     :param epsilon: A small positive constant. Alpha is calculated as 4 + epsilon.
     :return: None
     :raises Exception: If no feasible matching exists (as required by the empty implementation).
-
     ---
     Doctest Examples (Based on "New Introduction" document):
 
     >>> from fairpyx import Instance, divide
     >>> from fairpyx.algorithms.qp_local_search import qp_local_search
 
-    >>> # Example 1: Easy example [cite: 730-737]
+    >>> # Example 1: Easy example
     >>> # T=15, alpha=4.1 (implied epsilon=0.1)
     >>> instance1 = Instance(
     ...     agents={"p0"},
     ...     items={"r1"},
     ...     valuations={"p0": {"r1": 10}}
     ... )
-    >>> # Test must fail due to empty implementation
-    >>> try:
-    ...    divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance1)
-    ...    print("Test failed: Algorithm did not raise an Exception.")
-    ... except Exception as e:
-    ...    print(f"Test passed (failed as expected): {e}")
-    ...
-    Test passed (failed as expected): Empty implementation: qp_local_search cannot find a matching for T=15.0.
+    >>> divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance1)
+    {'p0': {'r1'}}
 
     >>> # Example 2: Simple example
     >>> # Two agents, 3 items.
@@ -91,17 +84,11 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     ...         "p1": {"r1": 0, "r2": 5, "r3": 10}
     ...     }
     ... )
-    >>> try:
-    ...    divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance2)
-    ...    print("Test failed: Algorithm did not raise an Exception.")
-    ... except Exception as e:
-    ...    print(f"Test passed (failed as expected): {e}")
-    ...
-    Test passed (failed as expected): Empty implementation: qp_local_search cannot find a matching for T=15.0.
+    ... divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance2)
+    {p0: {'r1'}, p1: {'r3'}}
 
     >>> # Example 3: Collapse scenario
     >>> # T=15, alpha=4.1 (implied epsilon=0.1)
-    >>> # The matching start with p0 having r1 and r2 as and edge in the matching.
     >>> instance3 = Instance(
     ...     agents={"p0", "p1"},
     ...     items={"r1", "r2", "r3"},
@@ -110,13 +97,8 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     ...         "p1": {"r1": 3, "r2": 3, "r3": 0}
     ...     }
     ... )
-    >>> try:
-    ...    divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance3)
-    ...    print("Test failed: Algorithm did not raise an Exception.")
-    ... except Exception as e:
-    ...    print(f"Test passed (failed as expected): {e}")
-    ...
-    Test passed (failed as expected): Empty implementation: qp_local_search cannot find a matching for T=15.0.
+    ... divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance3)
+    {p0: {'r3'}, p1: {'r1', 'r2'}}
     """
 
     # ==============================================================================
