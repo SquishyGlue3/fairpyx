@@ -78,25 +78,21 @@ def test_edge_case_minimal_input():
 def test_large_input():
     """
     Edge Case: Large instance with many agents and items.
-    The valuations should be:
-    agent a0 valuations: {'i0': 0, 'i1': 0, 'i2': 3, 'i3': 0, 'i4': 0, 'i5': 0, 'i6': 9, 'i7': 0, 'i8': 0, 'i9': 8}
-    agent a1 valuations: {'i0': 1, 'i1': 3, 'i2': 0, 'i3': 4, 'i4': 0, 'i5': 0, 'i6': 6, 'i7': 1, 'i8': 0, 'i9': 0}
-    agent a2 valuations: {'i0': 5, 'i1': 10, 'i2': 6, 'i3': 0, 'i4': 4, 'i5': 2, 'i6': 0, 'i7': 8, 'i8': 0, 'i9': 0}
-    agent a3 valuations: {'i0': 5, 'i1': 2, 'i2': 3, 'i3': 0, 'i4': 0, 'i5': 0, 'i6': 6, 'i7': 0, 'i8': 1, 'i9': 0}
-    agent a4 valuations: {'i0': 4, 'i1': 10, 'i2': 0, 'i3': 0, 'i4': 0, 'i5': 0, 'i6': 9, 'i7': 0, 'i8': 0, 'i9': 4}
-    agent a5 valuations: {'i0': 3, 'i1': 2, 'i2': 0, 'i3': 3, 'i4': 7, 'i5': 0, 'i6': 8, 'i7': 9, 'i8': 1, 'i9': 2}
-    agent a6 valuations: {'i0': 9, 'i1': 0, 'i2': 0, 'i3': 1, 'i4': 5, 'i5': 3, 'i6': 2, 'i7': 5, 'i8': 9, 'i9': 0}
-    agent a7 valuations: {'i0': 3, 'i1': 9, 'i2': 0, 'i3': 0, 'i4': 6, 'i5': 0, 'i6': 4, 'i7': 0, 'i8': 8, 'i9': 9}
-    agent a8 valuations: {'i0': 3, 'i1': 0, 'i2': 9, 'i3': 7, 'i4': 9, 'i5': 4, 'i6': 7, 'i7': 0, 'i8': 0, 'i9': 0}
-    agent a9 valuations: {'i0': 0, 'i1': 0, 'i2': 0, 'i3': 0, 'i4': 1, 'i5': 2, 'i6': 5, 'i7': 4, 'i8': 10, 'i9': 4}
+    Uses random valuations with a higher chance for zero values.
     """
     # We set a seed for reproducibility
-    random.seed(42)
+    seed = random.randint(0, 10**9)
+    print(f"Test seed: {seed}")
+    random.seed(seed)
+
+    # We create 10 agents and 20 items, increasing indexes
     agents = []
     items = []
-    for i in range(10):
+    numagents = 10
+    numitems = 20
+    for i in range(numagents):
         agents.append(f"a{i}")
-    for j in range(10):
+    for j in range(numitems):
         items.append(f"i{j}")
 
     #Random valuations between 0 and 10, the value for each item is equal for all agents, with higher chance for 0
@@ -104,9 +100,37 @@ def test_large_input():
     for agent in agents:
         valuations[agent] = {}
         for item in items:
-            valuations[agent][item] = random.choices([0, random.randint(1, 10)], weights=[0.5, 0.5])[0]
+            valuations[agent][item] = random.choices([0, random.randint(1, 20)], weights=[0.6, 0.4])[0]
         print("agent", agent, "valuations:", valuations[agent])
+    
+    T = 2
+
     instance = Instance(agents=agents, items=items, valuations=valuations)
 
-    result = divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
+    result = divide(lambda b: qp_local_search(b, T=T, epsilon=0.1), instance=instance)
+
+    # We just check that a dict is returned
     assert isinstance(result, dict)
+
+    # We check that there are no duplicate items assigned
+    all_allocated_items = set()
+    for agent, bundle in result.items():
+        # Check that agent is valid
+        assert agent in agents, f"Unknown agent {agent} in result!"
+
+        # Calculate agent value
+        agent_value = sum(instance.agent_item_value(agent, item) for item in bundle)
+
+        # Check no item is assigned to multiple agents
+        for item in bundle:
+            assert item not in all_allocated_items, f"Item {item} assigned to multiple agents!"
+            all_allocated_items.add(item)
+    
+    # We check that all allocated items are from the original set
+    for item in all_allocated_items:
+        assert item in items, f"Unknown item {item} in allocation!"
+
+    # We check that every agent meets the target T
+    for agent, bundle in result.items():
+        agent_value = sum(instance.agent_item_value(agent, item) for item in bundle)
+        assert agent_value >= T, f"Agent {agent} has value {agent_value} which is below target {T}!"

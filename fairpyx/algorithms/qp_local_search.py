@@ -71,7 +71,7 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     ...     items={"r1"},
     ...     valuations={"p0": {"r1": 10}}
     ... )
-    >>> divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance1)
+    >>> divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
     {'p0': {'r1'}}
 
     >>> # Example 2: Simple example
@@ -84,7 +84,7 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     ...         "p1": {"r1": 0, "r2": 5, "r3": 10}
     ...     }
     ... )
-    ... divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance2)
+    ... divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
     {p0: {'r1'}, p1: {'r3'}}
 
     >>> # Example 3: Collapse scenario
@@ -97,7 +97,7 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
     ...         "p1": {"r1": 3, "r2": 3, "r3": 0}
     ...     }
     ... )
-    ... divide(lambda builder: qp_local_search(builder, T=15.0, epsilon=0.1), instance=instance3)
+    ... divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
     {p0: {'r3'}, p1: {'r1', 'r2'}}
     """
 
