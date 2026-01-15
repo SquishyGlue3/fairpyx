@@ -25,7 +25,7 @@ def test_example_1_easy():
         valuations={"p0": {"r1": 10}}
     )
     # We expect {'p0': {'r1'}}
-    result = divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
+    result = divide(qp_local_search,  instance, T=15.0, epsilon=0.1)
     assert result == {'p0': {'r1'}}
 
 def test_example_2_simple():
@@ -41,7 +41,7 @@ def test_example_2_simple():
         }
     )
     # We expect {p0: {'r1'}, p1: {'r3'}}
-    result = divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
+    result = divide(qp_local_search,  instance, T=15.0, epsilon=0.1)
     assert result == {'p0': {'r1'}, 'p1': {'r3'}}
 
 def test_example_3_collapse():
@@ -58,7 +58,7 @@ def test_example_3_collapse():
         }
     )
     # We expect {p0: {'r3'}, p1: {'r1', 'r2'}}
-    result = divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
+    result = divide(qp_local_search,  instance, T=15.0, epsilon=0.1)
     assert result == {'p0': {'r3'}, 'p1': {'r1', 'r2'}}
 
 # ==============================================================================
@@ -72,7 +72,7 @@ def test_edge_case_minimal_input():
     """
     instance = Instance(valuations={"p0": {"r1": 0}})
     # This might fail with Exception in empty implementation
-    result = divide(lambda b: qp_local_search(b, T=15.0, epsilon=0.1), instance=instance)
+    result = divide(qp_local_search,  instance, T=15.0, epsilon=0.1)
     assert result == {"p0": set()}
 
 def test_large_input():
@@ -107,7 +107,7 @@ def test_large_input():
 
     instance = Instance(agents=agents, items=items, valuations=valuations)
 
-    result = divide(lambda b: qp_local_search(b, T=T, epsilon=0.1), instance=instance)
+    result = divide(qp_local_search,  instance, T=15.0, epsilon=0.1)
 
     # We just check that a dict is returned
     assert isinstance(result, dict)
