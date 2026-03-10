@@ -12,6 +12,28 @@ from fairpyx.instances import Instance
 from typing import Set, Dict, List, Optional, Any
 import math
 import logging
+from functools import lru_cache
+
+@lru_cache(maxsize=None)
+def get_sorted_positive_items(agent: Any, valuations_frozenset: frozenset) -> tuple:
+    """
+    Get a sorted list of (item, value) pairs for a given agent, where value > 0.
+    This is used in the greedy bundle construction to quickly find high-value items.
+    The input is a frozenset of (agent, item, value) tuples for caching purposes.
+    Args:
+        agent: The player for whom to get the sorted items.
+        valuations_frozenset: A frozenset of (agent, item, value) tuples representing the instance's valuations.
+    Returns:
+        A tuple of (item, value) pairs sorted by value in descending order, for items with positive value to the agent.
+    >>> vals = frozenset([("Alice", "x", 10), ("Alice", "y", 5), ("Alice", "z", 0), ("Bob", "x", 3)])
+    >>> get_sorted_positive_items("Alice", vals)
+    (('x', 10), ('y', 5))
+    >>> get_sorted_positive_items("Bob", vals)
+    (('x', 3),)
+    """
+    agent_items = [(i, v) for (a, i, v) in valuations_frozenset if a == agent and v > 0]
+    agent_items.sort(key=lambda x: x[1], reverse=True)
+    return tuple(agent_items)
 
 orig_sorted = AllocationBuilder.sorted
 
@@ -44,7 +66,7 @@ class AlternatingTree:
     The tree grows by adding A-edges and their blockers, and collapses when a free
     A-edge (one with no blockers) is found, allowing augmentation of the matching.
     """
-    def __init__(self, root_player: Any, T: float, alpha: float):
+    def __init__(self, root_player: Any, T: float, alpha: float, flat_vals: frozenset = None):
         """
         Initialize an alternating tree rooted at an unmatched player.
 
@@ -53,10 +75,12 @@ class AlternatingTree:
             T: The target value being tested in binary search.
             alpha: The approximation factor (4 + epsilon). The effective threshold
                    for each bundle is T / alpha.
+            flat_vals: Optional precomputed frozenset of (agent, item, value) tuples for caching.
         """
         self.root = root_player
         self.T = T
         self.alpha = alpha
+        self.flat_vals = flat_vals
 
         # Key: tuple(sorted items) -> edge metadata dict
         # metadata keys: items, player, distance, type, layer, parent
@@ -123,7 +147,8 @@ class AlternatingTree:
             cannot be reached with the remaining available items.
 
         >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 3, "z": 2}})
-        >>> tree = AlternatingTree("Alice", T=20, alpha=4.1)  # threshold ≈ 4.88
+        >>> fv = frozenset([("Alice", "x", 10), ("Alice", "y", 3), ("Alice", "z", 2)])
+        >>> tree = AlternatingTree("Alice", T=20, alpha=4.1, flat_vals=fv)  # threshold ≈ 4.88
 
         Fat edge found (single item x=10 >= 4.88):
         >>> tree._find_greedy_bundle("Alice", instance, set())
@@ -138,43 +163,35 @@ class AlternatingTree:
 
         Agent values nothing -> None:
         >>> instance2 = Instance(valuations={"Alice": {"x": 0, "y": 0}})
-        >>> tree2 = AlternatingTree("Alice", T=20, alpha=4.1)
+        >>> tree2 = AlternatingTree("Alice", T=20, alpha=4.1, flat_vals=fv)
         >>> tree2._find_greedy_bundle("Alice", instance2, set())
         """
         threshold = self.T / self.alpha
 
-        # Collect available items: agent values them > 0 and they're not in the tree
-        available = []
-        for item in instance.items:
+        sorted_items = get_sorted_positive_items(agent, self.flat_vals)
+
+        # 1. Check for fat edges
+        for item, val in sorted_items:
             if item in excluded_items:
                 continue
-            val = instance.agent_item_value(agent, item)
-            if val > 0:
-                available.append((item, val))
-
-        # 1. Check for fat edges first (single item >= threshold, distance 0)
-        for item, val in available:
             if val >= threshold:
                 bundle = (item,)
                 if bundle not in self.visited_bundles:
-                    logger.debug(f"    Greedy: found fat edge ({item}) for {agent}, value={val:.2f} >= threshold={threshold:.2f}")
                     return bundle
 
-        # 2. Greedily collect items by descending value for a thin edge (distance 1)
-        available.sort(key=lambda x: x[1], reverse=True)
+        # 2. Greedily collect items
         bundle_items = []
         bundle_value = 0.0
-        for item, val in available:
+        for item, val in sorted_items:
+            if item in excluded_items:
+                continue
             bundle_items.append(item)
             bundle_value += val
             if bundle_value >= threshold:
                 bundle = tuple(sorted(bundle_items))
                 if bundle not in self.visited_bundles:
-                    logger.debug(f"    Greedy: found thin edge {bundle} for {agent}, value={bundle_value:.2f} >= threshold={threshold:.2f}")
                     return bundle
                 return None
-
-        logger.debug(f"    Greedy: cannot reach threshold={threshold:.2f} for {agent}, max reachable={bundle_value:.2f}")
         return None
 
     def find_addable_edge(self, instance: Instance, max_distance: int) -> Optional[dict]:
@@ -253,6 +270,7 @@ class AlternatingTree:
             edge_cost = self.get_distance(bundle, player, instance)
             total_dist = parent_dist + edge_cost
 
+            # Check if this edge is addable and better than the best found so far
             if total_dist <= max_distance:
                 is_root = (player == self.root)
                 if (is_root and not best_is_root) or \
@@ -370,6 +388,11 @@ class AlternatingTree:
                      f"removed {len(keys_to_remove_A)} A-edges, {len(keys_to_remove_B)} B-edges")
 
 
+def is_satisfied(alloc: AllocationBuilder, agent, threshold: float) -> bool:
+    """Check if an agent's bundle value meets or exceeds the threshold."""
+    return alloc.instance.agent_bundle_value(agent, alloc.bundles.get(agent, [])) >= threshold
+
+
 def safe_swap(alloc: AllocationBuilder, player_losing: Any, items_losing, player_getting: Any, items_getting):
     """
     Transfer items between players in the matching.
@@ -405,7 +428,7 @@ def safe_swap(alloc: AllocationBuilder, player_losing: Any, items_losing, player
 
 
 # --- Algorithm 1: Single augmentation step ---
-def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) -> bool:
+def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1, flat_vals: frozenset = None) -> bool:
     """
     Algorithm 1 from the paper: augment a partial matching by one player.
 
@@ -423,12 +446,13 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
         alloc: AllocationBuilder with the current partial matching M.
         T: Target value. Each player must achieve value >= T / (4 + epsilon).
         epsilon: Approximation parameter.
+        flat_vals: Optional precomputed frozenset of (agent, item, value) tuples for caching.
 
     Returns:
         True if the matching was augmented (one more player now satisfied).
         False if no augmenting path exists (T_OPT < T, this T is infeasible).
 
-    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20}, "Bob": {"x": 15, "y": 5}})
+    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20, "z": 15}, "Bob": {"x": 10, "y": 20, "z": 15}})
     >>> alloc = AllocationBuilder(instance)
     >>> algorithm1_augment(alloc, T=20, epsilon=0.1)  # augments one player
     True
@@ -437,11 +461,8 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
     alpha = 4 + epsilon
     threshold = T / alpha
 
-    def is_satisfied(agent):
-        return sum(instance.agent_item_value(agent, item) for item in alloc.bundles.get(agent, [])) >= threshold
-
     # Find an unmatched (unsatisfied) player p0
-    unsatisfied_agents = [p for p in instance.agents if not is_satisfied(p)]
+    unsatisfied_agents = [p for p in instance.agents if not is_satisfied(alloc, p, threshold)]
     if not unsatisfied_agents:
         logger.info(f"[Algorithm 1] All players already satisfied at threshold {threshold:.2f}")
         return True
@@ -449,7 +470,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
     root_agent = unsatisfied_agents[0]
     logger.info(f"\n[Algorithm 1, line 1] Find unmatched player p0={root_agent}, make it root of alternating tree")
 
-    alt_tree = AlternatingTree(root_agent, T, alpha)
+    alt_tree = AlternatingTree(root_agent, T, alpha, flat_vals)
 
     # Maximum distance bound: 2 * ceil(log_{1+eps/3}(|P|)) + 1
     num_players = len(instance.agents)
@@ -501,9 +522,9 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
 
             edge_player = addable_edge['player']
             if edge_player != root_agent:
-                has_blocker = any(b['player'] == edge_player for b in alt_tree.B_edges.values())
+                has_blocker = any(b['player'] == edge_player for b in alt_tree.B_edges.values()) # check for a blocker that brought this player into the tree
                 if not has_blocker:
-                    logger.warning(f"[Algorithm 1] Collapse skipped: player {edge_player} not connected to tree via B-edge")
+                    logger.debug(f"[Algorithm 1] Collapse skipped: player {edge_player} not connected to tree via B-edge")
                     continue
 
             curr_key = e_key
@@ -519,7 +540,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
                     not set(curr_e['items']).isdisjoint(b_edge['items'])
                     for b_edge in alt_tree.B_edges.values()
                 )
-                if has_blocker:
+                if has_blocker: # if there is still a blocker, we cannot collapse this edge
                     logger.info(f"[Algorithm 1, line 8] Edge {curr_key} is now blocked -> exit collapse while loop")
                     break
 
@@ -543,7 +564,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
                         break
 
                 if e_prime is None:
-                    logger.warning(f"[Algorithm 1] Collapse: no B-edge found for player {player}")
+                    logger.debug(f"[Algorithm 1] Collapse: no B-edge found for player {player}")
                     break
 
                 # Algorithm 1, line 10: "M <- M \ {e'} U {e}"
@@ -576,7 +597,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
                     logger.info(f"[Algorithm 1, line 15-16] Partial collapse ended. Pruning to distance {dist}")
                     alt_tree.prune(dist)
                 else:
-                    logger.warning(f"[Algorithm 1] Collapse failed with no blocker removed")
+                    logger.debug(f"[Algorithm 1] Collapse failed with no blocker removed")
 
     # Algorithm 1, line 18: "return T_OPT is less than T"
     logger.info(f"[Algorithm 1, line 18] No augmenting path for {root_agent} -> T_OPT < T, this T={T:.2f} is infeasible")
@@ -584,7 +605,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
 
 
 # --- Outer loop: repeatedly call Algorithm 1 to grow the matching ---
-def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) -> bool:
+def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1, flat_vals: frozenset = None) -> bool:
     """
     Repeatedly call Algorithm 1 to grow the partial matching until all players
     are satisfied or the target T is determined to be infeasible.
@@ -598,12 +619,13 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
         T: Target value. Each player must achieve value >= T / (4 + epsilon).
         epsilon: Approximation parameter. Smaller epsilon gives a better
                  approximation ratio 1/(4+epsilon) but increases running time.
+        flat_vals: Optional precomputed frozenset of (agent, item, value) tuples for caching.
 
     Returns:
         True if all players are satisfied (value >= T/alpha), False if the
         algorithm gets stuck (no addable edge found), meaning T is too high.
 
-    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20}, "Bob": {"x": 15, "y": 5}})
+    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20, "z": 15}, "Bob": {"x": 10, "y": 20, "z": 15}})
     >>> alloc = AllocationBuilder(instance)
     >>> qp_local_search(alloc, T=20, epsilon=0.1)  # threshold = 20/4.1 ≈ 4.88
     True
@@ -621,18 +643,12 @@ def qp_local_search(alloc: AllocationBuilder, T: float, epsilon: float = 0.1) ->
 
     logger.info(f"[Outer Loop] Starting: T={T:.2f}, threshold=T/alpha={threshold:.2f}, alpha={alpha:.2f}")
 
-    def is_satisfied(agent):
-        return sum(instance.agent_item_value(agent, item) for item in alloc.bundles.get(agent, [])) >= threshold
-
-    unsatisfied_count = sum(1 for p in instance.agents if not is_satisfied(p))
-    logger.info(f"[Outer Loop] Initial unsatisfied players: {unsatisfied_count}")
-
-    while any(not is_satisfied(p) for p in instance.agents):
+    while any(not is_satisfied(alloc, p, threshold) for p in instance.agents):
         # Call Algorithm 1: augment the matching by one player
-        success = algorithm1_augment(alloc, T, epsilon)
+        success = algorithm1_augment(alloc, T, epsilon, flat_vals)
         if not success:
             return False
-        unsatisfied_count = sum(1 for p in instance.agents if not is_satisfied(p))
+        unsatisfied_count = sum(1 for p in instance.agents if not is_satisfied(alloc, p, threshold))
         logger.info(f"[Outer Loop] Remaining unsatisfied: {unsatisfied_count}")
 
     logger.info(f"[Outer Loop] ALL PLAYERS SATISFIED at threshold T/alpha = {threshold:.2f}")
@@ -645,7 +661,7 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
 
     Uses binary search over T, running Algorithm 1 (the purely combinatorial local
     search) at each step. The local search's success or failure determines whether
-    T is feasible — no LP is needed.
+    T is feasible.
 
     The approximation ratio is 1/(4+epsilon), matching the guarantee from the paper.
     The binary search converges when T_high - T_low < tolerance (1e-3).
@@ -661,7 +677,7 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
         Allocation dict mapping each agent to a set of assigned items.
         Every agent's bundle value is >= best_T / (4 + epsilon).
 
-    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20}, "Bob": {"x": 15, "y": 5}})
+    >>> instance = Instance(valuations={"Alice": {"x": 10, "y": 20, "z": 15}, "Bob": {"x": 10, "y": 20, "z": 15}})
     >>> result = qp_max_min_allocation(instance, epsilon=0.1)
     >>> set(result.keys()) == {"Alice", "Bob"}
     True
@@ -670,7 +686,7 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
 
     Each agent's value should meet the approximation guarantee:
     >>> alpha = 4.1
-    >>> all(sum(instance.agent_item_value(a, i) for i in b) >= 0 for a, b in result.items())
+    >>> all(sum(instance.agent_item_value(a, i) for i in b) >= alpha for a, b in result.items()) #
     True
 
     Zero-value instance returns empty bundles:
@@ -684,6 +700,11 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
     logger.info(f"Epsilon: {epsilon}, Approximation ratio: 1/{4+epsilon:.2f}")
     logger.info(f"{'='*60}\n")
 
+    flat_vals = frozenset((a, i, instance.agent_item_value(a, i))
+        for a in instance.agents
+        for i in instance.items
+    )
+
     # Determine search range for T: [0, max total value any agent can achieve]
     max_total_value = 0
     for agent in instance.agents:
@@ -695,27 +716,32 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
         return {agent: set() for agent in instance.agents}
 
     T_low = 0.0
-    T_high = max_total_value
+
+    # The paper's analysis shows that the optimal max-min value T_OPT is at most 4 times the maximum value any single agent can get from all items (since the approximation ratio is 1/(4+epsilon)). We add a small epsilon buffer to ensure we search above the true T_OPT.
+    T_high = max_total_value *(4 + epsilon)
     best_T = 0.0
     best_allocation = {agent: set() for agent in instance.agents}
     tolerance = 1e-3
 
     iteration = 0
-    max_iterations = int(math.log2(max_total_value / tolerance)) + 10
+    max_iterations = int(math.log2(T_high / tolerance)) + 10
     logger.info(f"[Binary Search] Range: [{T_low}, {T_high}], tolerance={tolerance}, max_iterations={max_iterations}")
+
+    import time as _time
+    _bs_start = _time.time()
 
     while T_high - T_low > tolerance and iteration < max_iterations:
         T_mid = (T_low + T_high) / 2
         iteration += 1
 
-        logger.info(f"\n[Binary Search] Iteration {iteration}: testing T = {T_mid:.4f} (range [{T_low:.4f}, {T_high:.4f}])")
+        _elapsed = _time.time() - _bs_start
+        logger.info(f"\n[Binary Search] Iteration {iteration}/{max_iterations} [{_elapsed:.1f}s elapsed]: "
+                     f"testing T = {T_mid:.4f} (range [{T_low:.4f}, {T_high:.4f}])")
 
-        # Seed Algorithm 1 with the best matching found so far (empty on first iteration)
+        # Start with a fresh (empty) matching for each T — edge classifications (fat/thin)
+        # depend on T, so reusing a matching from a different T leads to incorrect classifications.
         alloc = AllocationBuilder(instance)
-        for agent, items in best_allocation.items():
-            for item in items:
-                alloc.give(agent, item)
-        success = qp_local_search(alloc, T_mid, epsilon)
+        success = qp_local_search(alloc, T_mid, epsilon, flat_vals)
 
         if success:
             best_T = T_mid
@@ -727,8 +753,9 @@ def qp_max_min_allocation(instance: Instance, epsilon: float = 0.1) -> Dict[Any,
             logger.info(f"[Binary Search] T={T_mid:.4f} is INFEASIBLE -> search lower (T_high <- {T_mid:.4f})")
 
     # Final result
+    _total_time = _time.time() - _bs_start
     logger.info(f"\n{'='*60}")
-    logger.info(f"[Binary Search] COMPLETE after {iteration} iterations")
+    logger.info(f"[Binary Search] COMPLETE after {iteration} iterations in {_total_time:.1f}s")
     logger.info(f"[Binary Search] Best T found: {best_T:.4f}, threshold: {best_T/(4+epsilon):.4f}")
     logger.info(f"{'='*60}")
 
@@ -752,7 +779,7 @@ if __name__ == "__main__":
     instance = Instance(
         valuations={
             "Alice": {"item1": 10, "item2": 20, "item3": 30},
-            "Bob":   {"item1": 40, "item2": 50, "item3": 60},
+            "Bob":   {"item1": 10, "item2": 0, "item3": 30},
         }
     )
     allocation = qp_max_min_allocation(instance)
