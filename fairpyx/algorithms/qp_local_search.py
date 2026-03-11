@@ -541,7 +541,7 @@ def algorithm1_augment(alloc: AllocationBuilder, T: float, epsilon: float = 0.1)
                 e_prime_key = None
                 e_prime = None
                 for k, b in alt_tree.B_edges.items():
-                    if b['player'] == player and not set(curr_e['items']).isdisjoint(b['items']):
+                    if b['player'] == player:
                         e_prime_key, e_prime = k, b
                         break
 
