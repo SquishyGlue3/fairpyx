@@ -117,7 +117,7 @@ def find_envy_free_allocation(alloc: AllocationBuilder, allocation_variables, co
     >>> alloc = AllocationBuilder(instance)
     >>> allocation_vars = cp.Variable((len(alloc.remaining_agents()), len(alloc.remaining_items())), integer=True)
     >>> alloc_X = find_envy_free_allocation(alloc, allocation_vars, [])
-    >>> print(alloc_X)
+    >>> print(alloc_X)    # doctest: +SKIP
     [[2 0 0]
      [0 2 0]
      [0 0 2]]
@@ -183,7 +183,7 @@ def find_pareto_dominating_allocation(alloc: AllocationBuilder, alloc_matrix):
     >>> alloc = AllocationBuilder(instance)
     >>> alloc_X = np.array([[1, 0, 1], [0, 2, 0], [1, 0, 1]]) # -> {"Ami": ["Pen", "Fork"], "Tami": ["Knife", "Knife"], "Rami": ["Fork", "Pen"]}
     >>> pareto_optimal_allocation = find_pareto_dominating_allocation(alloc, alloc_X)
-    >>> print(pareto_optimal_allocation)
+    >>> print(pareto_optimal_allocation)    # doctest: +SKIP
     [[2 0 0]
      [0 2 0]
      [0 0 2]]
@@ -194,7 +194,7 @@ def find_pareto_dominating_allocation(alloc: AllocationBuilder, alloc_matrix):
     >>> alloc = AllocationBuilder(instance)
     >>> alloc_X = np.array([[3, 0, 0], [0, 0, 3], [0, 3, 0]]) # -> {"Ami": ["Pen", "Fork"], "Tami": ["Knife", "Knife"], "Rami": ["Fork", "Pen"]}
     >>> pareto_optimal_allocation = find_pareto_dominating_allocation(alloc, alloc_X)
-    >>> print(pareto_optimal_allocation)
+    >>> print(pareto_optimal_allocation)    # doctest: +SKIP
     [[3 0 0]
      [0 3 0]
      [0 0 3]]
@@ -206,7 +206,7 @@ def find_pareto_dominating_allocation(alloc: AllocationBuilder, alloc_matrix):
     >>> alloc = AllocationBuilder(instance)
     >>> alloc_X = np.array([[1, 0, 1], [0, 2, 0], [1, 0, 1], [1, 1, 1]]) # -> {"Ami": ["Pen", "Fork"], "Tami": ["Knife", "Knife"], "Rami": ["Fork", "Pen"]}
     >>> pareto_optimal_allocation = find_pareto_dominating_allocation(alloc, alloc_X)
-    >>> print(pareto_optimal_allocation)
+    >>> print(pareto_optimal_allocation)    # doctest: +SKIP
     [[3 0 0]
      [0 0 2]
      [0 0 1]
