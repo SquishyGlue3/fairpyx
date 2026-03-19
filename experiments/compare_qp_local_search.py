@@ -23,7 +23,6 @@ import matplotlib.pyplot as plt
 import random
 
 max_value = 1000
-normalized_sum_of_values = 1000
 TIME_LIMIT = 60
 
 def random_binary_instance(
@@ -43,16 +42,17 @@ def random_binary_instance(
     valuations = {a: {} for a in agents}
 
     for a in agents:
-        k = random.randint(1, num_of_gifts)
-        chosen = random.sample(items, k=k)
+        k = random.randint(1, num_of_gifts) # number of gifts this agent values
+        chosen = random.sample(items, k=k) # randomly choose k gifts for this agent
         for item in items:
-            valuations[a][item] = base_values[item] if item in chosen else 0
+            valuations[a][item] = base_values[item] if item in chosen else 0 # assign value based on whether the item was chosen for this agent
 
     for item in items:
         if not any(valuations[a][item] > 0 for a in agents):
             a = random.choice(agents)
             valuations[a][item] = base_values[item]
-
+    
+    # Just like in the santa claus comaprerison
     agent_caps = {a: num_of_gifts for a in agents}
     item_caps  = {i: 1 for i in items}
 
@@ -66,19 +66,15 @@ def evaluate_algorithm_on_instance(algorithm, instance):
     """
     Runs the given algorithm on the instance and returns evaluation metrics.
     """
-    # qp_max_min_allocation takes Instance directly, santa_claus_main uses divide()
-    if algorithm is qp_max_min_allocation:
-        allocation = algorithm(instance)
-    else:
-        allocation = divide(algorithm, instance=instance)
+    allocation = divide(algorithm, instance=instance)
 
     total_value = sum(
-        instance._valuations[agent][gift]
+        instance.agent_item_value(agent, gift)
         for agent, gifts in allocation.items()
         for gift in gifts
     )
     min_value = min(
-        sum(instance._valuations[agent][gift] for gift in gifts)
+        sum(instance.agent_item_value(agent, gift) for gift in gifts)
         for agent, gifts in allocation.items()
     )
 
@@ -91,7 +87,6 @@ def evaluate_algorithm_on_instance(algorithm, instance):
 def allocation_with_random_instance(
     num_of_players: int,
     num_of_gifts: int,
-    value_noise_ratio: float,
     algorithm: Callable,
     random_seed: int,
 ) -> Dict[str, Any]:
@@ -114,9 +109,8 @@ def run_experiment_qp():
     ex.logger.setLevel(logging.INFO)
 
     input_ranges = {
-        "num_of_players": [3, 4, 5, 6],
+        "num_of_players": [3, 4, 5],
         "num_of_gifts": [6, 8, 10, 12, 14],
-        "value_noise_ratio": [0.0],
         "algorithm": [qp_max_min_allocation, crs.santa_claus_main],
         "random_seed": list(range(5)),
     }
